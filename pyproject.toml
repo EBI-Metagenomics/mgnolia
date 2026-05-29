@@ -1,0 +1,30 @@
+[project]
+name = "mgnolia"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Aleksandar", email = "arjkvc@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pandera[polars]>=0.31.1",
+    "pydantic>=2.13.4,<3.0",
+    "rustworkx>=0.17.1,<0.18",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.5,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.409,<2.0",
+    "pytest>=9.0.3,<10.0",
+    "ruff>=0.15.14,<1.0",
+]
+
+[tool.pyright]
+include = ["src/mgnolia"]
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
