@@ -65,6 +65,11 @@ def test_node_allows_unbounded_max_matches() -> None:
     assert Dir(path="results", max_matches=None).max_matches is None
 
 
+def test_node_cannot_be_instantiated() -> None:
+    with pytest.raises(TypeError, match="Can't instantiate abstract class"):
+        Node(path="results")  # type: ignore[abstract]
+
+
 def test_node_is_abstract() -> None:
     import abc
 
@@ -730,3 +735,24 @@ def test_file_validate_content_reports_error_only_for_empty_file_in_glob(
     assert len(errors) == 1
     assert isinstance(errors[0], FileEmptyError)
     assert errors[0].path == (tmp_path / "a.csv").resolve()
+
+
+def test_file_validate_content_raises_if_validate_structure_not_called() -> None:
+    file_node = File(path="results.txt")
+    with pytest.raises(RuntimeError, match="validate_structure\\(\\) must be called"):
+        file_node.validate_content()
+
+
+def test_dir_missing_with_file_children_does_not_raise(tmp_path: Path) -> None:
+    schema = Schema(
+        children=[
+            Dir(
+                path="missing_dir",
+                children=[File(path="data.csv")],
+            )
+        ]
+    )
+    result = schema.validate_all(tmp_path)
+    assert result is False
+    assert len(schema.errors) == 1
+    assert isinstance(schema.errors[0], DirectoryMissingError)

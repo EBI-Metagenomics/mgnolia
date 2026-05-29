@@ -114,6 +114,8 @@ class Dir(Node):
 
     children: Iterable["Dir | File"] = Field(default_factory=list)
 
+    _matched: bool | None = PrivateAttr(default=None)
+
     def _missing_error(self, path: Path) -> StructureValidationError:
         return DirectoryMissingError(self, path)
 
@@ -124,19 +126,25 @@ class Dir(Node):
         matches = list(parent.glob(str(self.path)))
         errors = self._validate_match_count(parent, matches)
         if errors:
+            self._matched = False
             return errors
+        self._matched = True
         child_errors: list[StructureValidationError] = []
         for child, dir_path in product(self.children, matches):
             child_errors.extend(child.validate_structure(dir_path))
         return child_errors
 
     def validate_content(self) -> list[ContentValidationError]:
+        if self._matched is None:
+            raise RuntimeError(
+                "validate_structure() must be called before validate_content(). "
+                "Use Schema.validate_all() to run both in the correct order."
+            )
+        if not self._matched:
+            return []
         errors: list[ContentValidationError] = []
-
         for child in self.children:
-            child_errors = child.validate_content()
-            errors.extend(child_errors)
-
+            errors.extend(child.validate_content())
         return errors
 
 
