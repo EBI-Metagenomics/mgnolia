@@ -1,14 +1,15 @@
 [project]
 name = "mgnolia"
 version = "0.1.0"
-description = "Add your description here"
+description = "Declarative filesystem structure and content validation for Python"
 readme = "README.md"
+license = { file = "LICENSE" }
 authors = [
     { name = "Aleksandar", email = "arjkvc@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "pandera[polars]>=0.31.1",
+    "pandera[polars]>=0.31.1,<1.0",
     "pydantic>=2.13.4,<3.0",
     "rustworkx>=0.17.1,<0.18",
 ]
