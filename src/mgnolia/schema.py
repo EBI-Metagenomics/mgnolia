@@ -7,7 +7,7 @@ from glob import has_magic
 from itertools import product
 from os import PathLike
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 from pydantic import (
     BaseModel,
@@ -112,7 +112,7 @@ class Node(NodeBase, abc.ABC):
 class Dir(Node):
     """Declarative directory node."""
 
-    children: Iterable["Dir | File"] = Field(default_factory=list)
+    children: list["Dir | File"] = Field(default_factory=list)
 
     _matched: bool | None = PrivateAttr(default=None)
 
@@ -187,7 +187,7 @@ class File(Node):
 
 class Schema(NodeBase):
     path: PathOrStr = Field(default_factory=Path.cwd)
-    children: Iterable["Dir | File"] = Field(default_factory=list)
+    children: list["Dir | File"] = Field(default_factory=list)
 
     _errors: list[ValidationError] = PrivateAttr(default_factory=list)
 
