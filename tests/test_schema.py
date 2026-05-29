@@ -625,9 +625,9 @@ def test_csv_schema_rule_returns_errors_for_multiple_invalid_rows(
     assert len(result) >= 1
     assert all(isinstance(e, ContentSchemaError) for e in result)
     total_failure_cases = sum(
-        len(e.schema_error.failure_cases)
+        len(e.schema_error.failure_cases)  # type: ignore
         for e in result
-        if e.schema_error.failure_cases is not None
+        if e.schema_error.failure_cases is not None  # type: ignore
     )
     assert total_failure_cases >= 2
 
