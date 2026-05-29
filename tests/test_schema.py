@@ -77,6 +77,12 @@ def test_node_is_abstract() -> None:
     assert hasattr(Node, "__abstractmethods__")
 
 
+def test_dir_validate_content_raises_if_validate_structure_not_called() -> None:
+    dir_node = Dir(path="results")
+    with pytest.raises(RuntimeError, match="validate_structure\\(\\) must be called"):
+        dir_node.validate_content()
+
+
 def test_dir_uses_expected_defaults() -> None:
     directory = Dir(path="results")
 
