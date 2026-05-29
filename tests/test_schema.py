@@ -18,7 +18,8 @@ from mgnolia.schema import Dir, File, Node, Schema
 
 
 def test_node_uses_expected_defaults() -> None:
-    node = Node(path="results")
+    # Node is abstract; use Dir as a concrete representative
+    node = Dir(path="results")
 
     assert node.path == Path("results")
     assert node.min_matches == 1
@@ -36,7 +37,7 @@ def test_node_uses_expected_defaults() -> None:
     ],
 )
 def test_node_path_is_glob(path: Path, expected: bool) -> None:
-    assert Node(path=path).path_is_glob is expected
+    assert Dir(path=path).path_is_glob is expected
 
 
 @pytest.mark.parametrize(
@@ -57,15 +58,18 @@ def test_node_rejects_invalid_model_values(
     kwargs: dict[str, Any], message: str
 ) -> None:
     with pytest.raises(PydanticValidationError, match=message):
-        Node(**kwargs)
+        Dir(**kwargs)
 
 
 def test_node_allows_unbounded_max_matches() -> None:
-    assert Node(path="results", max_matches=None).max_matches is None
+    assert Dir(path="results", max_matches=None).max_matches is None
 
 
-def test_node_base_validate_structure_returns_not_implemented(tmp_path: Path) -> None:
-    assert Node(path="results").validate_structure(tmp_path) is NotImplemented
+def test_node_is_abstract() -> None:
+    import abc
+
+    assert issubclass(Node, abc.ABC)
+    assert hasattr(Node, "__abstractmethods__")
 
 
 def test_dir_uses_expected_defaults() -> None:

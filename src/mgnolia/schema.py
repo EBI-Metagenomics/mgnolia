@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import abc
 from glob import has_magic
 from itertools import product
 from os import PathLike
@@ -48,19 +49,37 @@ class NodeBase(BaseModel):
     )
 
 
-class Node(NodeBase):
+class Node(NodeBase, abc.ABC):
     """Common configuration for typed public models."""
 
     min_matches: NonNegativeInt = 1
     max_matches: Optional[PositiveInt] = 1
 
+    @abc.abstractmethod
     def validate_structure(
         self, parent_path: PathOrStr
-    ) -> list[StructureValidationError]:
-        return NotImplemented
+    ) -> list[StructureValidationError]: ...
 
-    def validate_content(self) -> list[ContentValidationError]:
-        return NotImplemented
+    @abc.abstractmethod
+    def validate_content(self) -> list[ContentValidationError]: ...
+
+    @abc.abstractmethod
+    def _missing_error(self, path: Path) -> StructureValidationError: ...
+
+    def _validate_match_count(
+        self, parent_path: Path, matches: list[Path]
+    ) -> list[StructureValidationError]:
+        num_of_matches = len(matches)
+
+        if num_of_matches < self.min_matches:
+            if self.path_is_glob:
+                return [MinMatchError(self, parent_path / self.path)]
+            return [self._missing_error(parent_path / self.path)]
+
+        if self.max_matches is not None and num_of_matches > self.max_matches:
+            return [MaxMatchError(self, parent_path / self.path)]
+
+        return []
 
     @field_validator("path")
     @classmethod
@@ -95,29 +114,21 @@ class Dir(Node):
 
     children: Iterable["Dir | File"] = Field(default_factory=list)
 
+    def _missing_error(self, path: Path) -> StructureValidationError:
+        return DirectoryMissingError(self, path)
+
     def validate_structure(
         self, parent_path: PathOrStr
     ) -> list[StructureValidationError]:
-        normalized_parent_path = Path(parent_path)
-        matches = list(normalized_parent_path.glob(str(self.path)))
-        num_of_matches = len(matches)
-
-        if num_of_matches < self.min_matches:
-            if self.path_is_glob:
-                return [MinMatchError(self, normalized_parent_path / self.path)]
-
-            return [DirectoryMissingError(self, normalized_parent_path / self.path)]
-
-        if self.max_matches is not None and num_of_matches > self.max_matches:
-            return [MaxMatchError(self, normalized_parent_path / self.path)]
-
-        errors: list[StructureValidationError] = []
-
+        parent = Path(parent_path)
+        matches = list(parent.glob(str(self.path)))
+        errors = self._validate_match_count(parent, matches)
+        if errors:
+            return errors
+        child_errors: list[StructureValidationError] = []
         for child, dir_path in product(self.children, matches):
-            child_errors = child.validate_structure(dir_path)
-            errors.extend(child_errors)
-
-        return errors
+            child_errors.extend(child.validate_structure(dir_path))
+        return child_errors
 
     def validate_content(self) -> list[ContentValidationError]:
         errors: list[ContentValidationError] = []
@@ -134,29 +145,29 @@ class File(Node):
 
     content_rules: list[ContentRule] = Field(default_factory=list)
 
-    _resolved_paths: list[Path] = PrivateAttr(default_factory=list)
+    _resolved_paths: list[Path] | None = PrivateAttr(default=None)
+
+    def _missing_error(self, path: Path) -> StructureValidationError:
+        return FileMissingError(self, path)
 
     def validate_structure(
         self, parent_path: PathOrStr
     ) -> list[StructureValidationError]:
-        normalized_parent_path = Path(parent_path)
-        matches = list(normalized_parent_path.glob(str(self.path)))
-        num_of_matches = len(matches)
-
-        if num_of_matches < self.min_matches:
-            if self.path_is_glob:
-                return [MinMatchError(self, normalized_parent_path / self.path)]
-
-            return [FileMissingError(self, normalized_parent_path / self.path)]
-
-        if self.max_matches is not None and num_of_matches > self.max_matches:
-            return [MaxMatchError(self, normalized_parent_path / self.path)]
-
-        self._resolved_paths = [path.resolve() for path in matches]
-
+        parent = Path(parent_path)
+        matches = list(parent.glob(str(self.path)))
+        errors = self._validate_match_count(parent, matches)
+        if errors:
+            self._resolved_paths = []
+            return errors
+        self._resolved_paths = [p.resolve() for p in matches]
         return []
 
     def validate_content(self) -> list[ContentValidationError]:
+        if self._resolved_paths is None:
+            raise RuntimeError(
+                "validate_structure() must be called before validate_content(). "
+                "Use Schema.validate_all() to run both in the correct order."
+            )
         errors: list[ContentValidationError] = []
 
         for rule, path in product(self.content_rules, self._resolved_paths):
