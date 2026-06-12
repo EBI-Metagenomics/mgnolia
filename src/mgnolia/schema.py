@@ -115,6 +115,7 @@ class Dir(Node):
     children: list["Dir | File"] = Field(default_factory=list)
 
     _matched: bool | None = PrivateAttr(default=None)
+    _resolved_children: list["Dir | File"] = PrivateAttr(default_factory=list)
 
     def _missing_error(self, path: Path) -> StructureValidationError:
         return DirectoryMissingError(self, path)
@@ -125,13 +126,21 @@ class Dir(Node):
         parent = Path(parent_path)
         matches = list(parent.glob(str(self.path)))
         errors = self._validate_match_count(parent, matches)
+        self._resolved_children = []
         if errors:
             self._matched = False
             return errors
         self._matched = True
         child_errors: list[StructureValidationError] = []
+        # Clone children per matched directory so each match owns its own
+        # validation state. Without this, declared children are shared
+        # across glob matches and their private attrs (e.g. File's
+        # `_resolved_paths`) get overwritten on every iteration, so content
+        # rules only ever run against the last matched directory.
         for child, dir_path in product(self.children, matches):
-            child_errors.extend(child.validate_structure(dir_path))
+            resolved_child = child.model_copy(deep=True)
+            child_errors.extend(resolved_child.validate_structure(dir_path))
+            self._resolved_children.append(resolved_child)
         return child_errors
 
     def validate_content(self) -> list[ContentValidationError]:
@@ -143,7 +152,7 @@ class Dir(Node):
         if not self._matched:
             return []
         errors: list[ContentValidationError] = []
-        for child in self.children:
+        for child in self._resolved_children:
             errors.extend(child.validate_content())
         return errors
 
