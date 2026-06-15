@@ -110,6 +110,8 @@ class RowCountRule(ContentRule):
             raise ValueError("RowCountRule requires at least one of exact, min, max")
         if exact is not None and (min is not None or max is not None):
             raise ValueError("RowCountRule: exact cannot be combined with min/max")
+        if min is not None and max is not None and min > max:
+            raise ValueError(f"RowCountRule: min ({min}) cannot exceed max ({max})")
         self.exact = exact
         self.min = min
         self.max = max
