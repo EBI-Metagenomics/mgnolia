@@ -130,9 +130,13 @@ class RowCountError(ContentValidationError):
 
 
 class NotSortedError(ContentValidationError):
-    def __init__(self, node: Node, path: Path, column: str) -> None:
+    def __init__(
+        self, node: Node, path: Path, column: str, order: str = "asc"
+    ) -> None:
         super().__init__(node, path)
         self.column = column
+        self.order = order
 
     def get_message(self) -> str:
-        return f"Not sorted ascending by {self.column!r}"
+        direction = "ascending" if self.order == "asc" else "descending"
+        return f"Not sorted {direction} by {self.column!r}"

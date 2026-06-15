@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Literal, Type
 
 import pandera.polars as pa
 import polars as pl
@@ -131,23 +131,23 @@ class RowCountRule(ContentRule):
 
 class SortedRule(ContentRule):
     """
-    Assert a parquet column is sorted ascending.
+    Assert a parquet column is sorted in the given order.
 
     Streaming scan of one column — cheap on narrow integer keys, expensive
     on TB-scale files.
     """
 
-    def __init__(self, column: str) -> None:
+    def __init__(
+        self, column: str, *, order: Literal["asc", "desc"] = "asc"
+    ) -> None:
         super().__init__()
         self.column = column
+        self.order = order
 
     def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
-        ok = (
-            pl.scan_parquet(path)
-            .select((pl.col(self.column).diff() >= 0).all())
-            .collect()
-            .item()
-        )
+        diff = pl.col(self.column).diff()
+        check = (diff >= 0) if self.order == "asc" else (diff <= 0)
+        ok = pl.scan_parquet(path).select(check.all()).collect().item()
         if ok:
             return []
-        return [NotSortedError(node, path, self.column)]
+        return [NotSortedError(node, path, self.column, self.order)]
