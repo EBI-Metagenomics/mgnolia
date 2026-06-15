@@ -140,3 +140,12 @@ class NotSortedError(ContentValidationError):
     def get_message(self) -> str:
         direction = "ascending" if self.order == "asc" else "descending"
         return f"Not sorted {direction} by {self.column!r}"
+
+
+class MissingColumnError(ContentValidationError):
+    def __init__(self, node: Node, path: Path, column: str) -> None:
+        super().__init__(node, path)
+        self.column = column
+
+    def get_message(self) -> str:
+        return f"Column {self.column!r} not found"

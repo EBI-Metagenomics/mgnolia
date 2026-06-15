@@ -16,6 +16,7 @@ from mgnolia.errors import (
     ContentSchemaError,
     ContentValidationError,
     FileEmptyError,
+    MissingColumnError,
     NotSortedError,
     ParquetSchemaMismatchError,
     RowCountError,
@@ -147,7 +148,10 @@ class SortedRule(ContentRule):
     def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
         diff = pl.col(self.column).diff()
         check = (diff >= 0) if self.order == "asc" else (diff <= 0)
-        ok = pl.scan_parquet(path).select(check.all()).collect().item()
+        try:
+            ok = pl.scan_parquet(path).select(check.all()).collect().item()
+        except pl.exceptions.ColumnNotFoundError:
+            return [MissingColumnError(node, path, self.column)]
         if ok:
             return []
         return [NotSortedError(node, path, self.column, self.order)]

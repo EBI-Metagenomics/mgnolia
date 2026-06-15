@@ -114,6 +114,19 @@ def test_sorted_rule_rejects_unsorted_column(tmp_path: Path) -> None:
     assert errors[0].column == "id"
 
 
+def test_sorted_rule_reports_missing_column(tmp_path: Path) -> None:
+    from mgnolia.errors import MissingColumnError
+
+    p = tmp_path / "data.parquet"
+    _write_parquet(p, pl.DataFrame({"id": [1, 2, 3]}))
+
+    errors = SortedRule("does_not_exist").validate(_node(), p)
+
+    assert len(errors) == 1
+    assert isinstance(errors[0], MissingColumnError)
+    assert errors[0].column == "does_not_exist"
+
+
 def test_sorted_rule_accepts_descending_column(tmp_path: Path) -> None:
     p = tmp_path / "desc.parquet"
     _write_parquet(p, pl.DataFrame({"id": [3, 2, 1]}))
