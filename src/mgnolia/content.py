@@ -134,18 +134,14 @@ class SortedRule(ContentRule):
     Assert a parquet column is sorted ascending.
 
     Streaming scan of one column — cheap on narrow integer keys, expensive
-    on TB-scale files. The `deep` kwarg gates the scan, when False the
-    rule no-ops. Placeholder for a future framework-level cost-tier mechanism.
+    on TB-scale files.
     """
 
-    def __init__(self, column: str, *, deep: bool = False) -> None:
+    def __init__(self, column: str) -> None:
         super().__init__()
         self.column = column
-        self.deep = deep
 
     def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
-        if not self.deep:
-            return []
         ok = (
             pl.scan_parquet(path)
             .select((pl.col(self.column).diff() >= 0).all())

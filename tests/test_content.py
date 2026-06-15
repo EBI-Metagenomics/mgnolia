@@ -96,25 +96,18 @@ def test_row_count_rule_rejects_exact_with_min() -> None:
 # ---------- SortedRule ----------
 
 
-def test_sorted_rule_noops_when_not_deep(tmp_path: Path) -> None:
-    p = tmp_path / "unsorted.parquet"
-    _write_parquet(p, pl.DataFrame({"id": [3, 1, 2]}))
+def test_sorted_rule_accepts_sorted_column(tmp_path: Path) -> None:
+    p = tmp_path / "sorted.parquet"
+    _write_parquet(p, pl.DataFrame({"id": [1, 2, 3]}))
 
     assert SortedRule("id").validate(_node(), p) == []
 
 
-def test_sorted_rule_deep_accepts_sorted_column(tmp_path: Path) -> None:
-    p = tmp_path / "sorted.parquet"
-    _write_parquet(p, pl.DataFrame({"id": [1, 2, 3]}))
-
-    assert SortedRule("id", deep=True).validate(_node(), p) == []
-
-
-def test_sorted_rule_deep_rejects_unsorted_column(tmp_path: Path) -> None:
+def test_sorted_rule_rejects_unsorted_column(tmp_path: Path) -> None:
     p = tmp_path / "unsorted.parquet"
     _write_parquet(p, pl.DataFrame({"id": [3, 1, 2]}))
 
-    errors = SortedRule("id", deep=True).validate(_node(), p)
+    errors = SortedRule("id").validate(_node(), p)
 
     assert len(errors) == 1
     assert isinstance(errors[0], NotSortedError)
