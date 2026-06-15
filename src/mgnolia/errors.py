@@ -78,3 +78,74 @@ class ContentSchemaError(ContentValidationError):
             return f"Schema error at rows: {indices}"
 
         return f"Schema validation failed with {len(failure_cases)} failure case(s)"
+
+
+class ParquetSchemaMismatchError(ContentValidationError):
+    def __init__(
+        self,
+        node: Node,
+        path: Path,
+        missing: set[str],
+        extra: set[str],
+        wrong_dtype: dict[str, tuple[object, object]],
+    ) -> None:
+        super().__init__(node, path)
+        self.missing = missing
+        self.extra = extra
+        self.wrong_dtype = wrong_dtype
+
+    def get_message(self) -> str:
+        return (
+            f"Parquet schema mismatch: missing={self.missing}, "
+            f"extra={self.extra}, wrong_dtype={self.wrong_dtype}"
+        )
+
+
+class RowCountError(ContentValidationError):
+    def __init__(
+        self,
+        node: Node,
+        path: Path,
+        actual: int,
+        *,
+        exact: int | None = None,
+        min: int | None = None,
+        max: int | None = None,
+    ) -> None:
+        super().__init__(node, path)
+        self.actual = actual
+        self.exact = exact
+        self.min = min
+        self.max = max
+
+    def get_message(self) -> str:
+        if self.exact is not None:
+            return f"Row count {self.actual} != expected {self.exact}"
+        bounds = []
+        if self.min is not None:
+            bounds.append(f"min={self.min}")
+        if self.max is not None:
+            bounds.append(f"max={self.max}")
+        return f"Row count {self.actual} out of bounds ({', '.join(bounds)})"
+
+
+class NotSortedError(ContentValidationError):
+    def __init__(
+        self, node: Node, path: Path, column: str, order: str = "asc"
+    ) -> None:
+        super().__init__(node, path)
+        self.column = column
+        self.order = order
+
+    def get_message(self) -> str:
+        direction = "ascending" if self.order == "asc" else "descending"
+        return f"Not sorted {direction} by {self.column!r}"
+
+
+class MissingColumnError(ContentValidationError):
+    def __init__(self, node: Node, path: Path, column: str) -> None:
+        super().__init__(node, path)
+        self.column = column
+
+    def get_message(self) -> str:
+        return f"Column {self.column!r} not found"
