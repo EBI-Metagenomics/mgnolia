@@ -146,8 +146,9 @@ class SortedRule(ContentRule):
         self.order = order
 
     def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
-        diff = pl.col(self.column).diff()
-        check = (diff >= 0) if self.order == "asc" else (diff <= 0)
+        col = pl.col(self.column)
+        next_val = col.shift(-1)
+        check = (col <= next_val) if self.order == "asc" else (col >= next_val)
         try:
             ok = pl.scan_parquet(path).select(check.all()).collect().item()
         except pl.exceptions.ColumnNotFoundError:
