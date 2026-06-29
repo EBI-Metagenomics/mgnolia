@@ -147,6 +147,24 @@ def test_sorted_rule_rejects_ascending_column_when_desc_expected(
     assert errors[0].order == "desc"
 
 
+def test_sorted_rule_accepts_sorted_string_column(tmp_path: Path) -> None:
+    p = tmp_path / "sorted_str.parquet"
+    _write_parquet(p, pl.DataFrame({"v": ["MGYP000000000001", "MGYP000000000002", "MGYP000000000003"]}))
+
+    assert SortedRule("v").validate(_node(), p) == []
+
+
+def test_sorted_rule_rejects_unsorted_string_column(tmp_path: Path) -> None:
+    p = tmp_path / "unsorted_str.parquet"
+    _write_parquet(p, pl.DataFrame({"v": ["MGYP000000000002", "MGYP000000000001", "MGYP000000000003"]}))
+
+    errors = SortedRule("v").validate(_node(), p)
+
+    assert len(errors) == 1
+    assert isinstance(errors[0], NotSortedError)
+    assert errors[0].column == "v"
+
+
 # ---------- Regression: shared-File-state bug under globbed parent ----------
 
 
