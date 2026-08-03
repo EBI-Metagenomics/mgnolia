@@ -1,0 +1,38 @@
+version: '3'
+
+tasks:
+
+  setup:
+    desc: Install the locked development environment
+    cmds:
+      - uv sync --locked --all-extras --dev
+
+  test:
+    desc: Run the pytest suite
+    cmds:
+      - uv run --frozen pytest -v
+
+  lint:
+    desc: Check the repository with Ruff
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Format Python files with Ruff
+    cmds:
+      - uv run ruff format .
+
+  format-check:
+    desc: Check Python formatting without changing files
+    cmds:
+      - uv run ruff format --check .
+
+  typecheck:
+    desc: Run Pyright
+    cmds:
+      - uv run pyright
+
+  example:
+    desc: Run the CSV directory validation example
+    cmds:
+      - uv run python examples/validate_csv_directory.py

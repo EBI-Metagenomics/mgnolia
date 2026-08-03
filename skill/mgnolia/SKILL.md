@@ -7,7 +7,7 @@ description: Use when designing, debugging, extending, or testing Python code th
 
 Use this skill as the fast operating guide for the installed `mgnolia` package. Assume the consuming project has installed it with `pip` or `uv`; inspect the active environment and public package imports rather than expecting the library's source checkout to be present. If this guide and the installed package differ, the installed package wins.
 
-For concrete recipes and agent-oriented usage patterns, read [usage.md](usage.md) in the library repository when it is available. In a consuming project, use that document as the mgnolia cookbook and the consuming project's own tests and examples as the domain-specific authority.
+For concrete recipes and agent-oriented usage patterns, read [references/usage.md](references/usage.md) in the library repository when it is available. In a consuming project, use that document as the mgnolia cookbook and the consuming project's own tests and examples as the domain-specific authority.
 
 ## Core model
 
