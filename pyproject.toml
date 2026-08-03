@@ -1,6 +1,6 @@
 [project]
 name = "mgnolia"
-version = "0.2.0"
+version = "0.3.0"
 description = "Declarative filesystem structure and content validation for Python"
 readme = "README.md"
 license = { file = "LICENSE" }
