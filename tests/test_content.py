@@ -1,11 +1,25 @@
 from pathlib import Path
+from typing import Literal
 
 import polars as pl
 import pytest
+from pydantic import BaseModel
 
-from mgnolia.content import ParquetSchemaRule, RowCountRule, SortedRule
-from mgnolia.errors import NotSortedError, ParquetSchemaMismatchError, RowCountError
-from mgnolia.schema import File
+from mgnolia.content import (
+    CSVSchemaRule,
+    FileNotEmptyRule,
+    ParquetSchemaRule,
+    RowCountRule,
+    SortedRule,
+)
+from mgnolia.errors import (
+    MaxMatchError,
+    NotSortedError,
+    ParquetSchemaMismatchError,
+    RowCountError,
+)
+from mgnolia.schema import File, Schema
+from mgnolia.values import Value
 
 
 def _write_parquet(path: Path, df: pl.DataFrame) -> None:
@@ -81,6 +95,103 @@ def test_row_count_rule_min_violation(tmp_path: Path) -> None:
 
     assert len(errors) == 1
     assert errors[0].actual == 5
+
+
+def test_row_count_rule_publishes_actual_count(tmp_path: Path) -> None:
+    p = tmp_path / "rows.parquet"
+    _write_parquet(p, pl.DataFrame({"id": list(range(7))}))
+    rows = Value[int]("rows")
+
+    RowCountRule(exact=10, output=rows).validate(_node(), p)
+
+    assert rows.ref().resolve() == 7
+
+
+def test_builtin_rule_parameters_accept_refs(tmp_path: Path) -> None:
+    parquet = tmp_path / "rows.parquet"
+    _write_parquet(parquet, pl.DataFrame({"id": [1, 2]}))
+    expected_schema = Value[dict[str, pl.DataType]]("schema")
+    exact = Value[int]("exact")
+    minimum = Value[int]("minimum")
+    maximum = Value[int]("maximum")
+    column = Value[str]("column")
+    order = Value[Literal["asc", "desc"]]("order")
+    actual_schema = Value[dict[str, pl.DataType]]("actual_schema")
+    extent = Value[tuple[object, object]]("extent")
+    file_size = Value[int]("file_size")
+    expected_schema.set({"id": pl.Int64})
+    exact.set(2)
+    minimum.set(1)
+    maximum.set(3)
+    column.set("id")
+    order.set("asc")
+
+    assert (
+        ParquetSchemaRule(expected_schema.ref(), output=actual_schema).validate(
+            _node(), parquet
+        )
+        == []
+    )
+    assert RowCountRule(exact=exact.ref()).validate(_node(), parquet) == []
+    assert (
+        RowCountRule(min=minimum.ref(), max=maximum.ref()).validate(_node(), parquet)
+        == []
+    )
+    assert (
+        SortedRule(column.ref(), order=order.ref(), output=extent).validate(
+            _node(), parquet
+        )
+        == []
+    )
+    assert FileNotEmptyRule(output=file_size).validate(_node(), parquet) == []
+    assert actual_schema.ref().resolve() == {"id": pl.Int64}
+    assert extent.ref().resolve() == (1, 2)
+    assert file_size.ref().resolve() > 0
+
+    class Row(BaseModel):
+        id: int
+
+    csv = tmp_path / "rows.csv"
+    csv.write_text("id\n1\n", encoding="utf-8")
+    csv_schema = Value[type[BaseModel]]("csv_schema")
+    actual_csv_schema = Value[dict[str, pl.DataType]]("actual_csv_schema")
+    csv_schema.set(Row)
+    assert (
+        CSVSchemaRule(csv_schema.ref(), output=actual_csv_schema).validate(
+            _node(), csv
+        )
+        == []
+    )
+    assert actual_csv_schema.ref().resolve() == {"id": pl.Int64}
+
+
+def test_row_count_can_limit_later_file_matches(tmp_path: Path) -> None:
+    _write_parquet(tmp_path / "users.parquet", pl.DataFrame({"id": [1, 2]}))
+    avatars = tmp_path / "user_avatars"
+    avatars.mkdir()
+    for name in ("1.png", "2.png", "3.png"):
+        (avatars / name).touch()
+    user_count = Value[int]("users.row_count")
+    avatar_count = Value[int]("avatars.match_count")
+    schema = Schema(
+        children=[
+            File(
+                path="users.parquet",
+                content_rules=[RowCountRule(min=1, max=10_000, output=user_count)],
+            ),
+            File(
+                path="user_avatars/*.png",
+                min_matches=0,
+                max_matches=user_count.ref(),
+                output=avatar_count,
+            ),
+        ]
+    )
+
+    assert schema.validate_all(tmp_path) is False
+    assert len(schema.errors) == 1
+    assert isinstance(schema.errors[0], MaxMatchError)
+    assert avatar_count.ref().resolve() == 3
 
 
 def test_row_count_rule_rejects_no_bounds() -> None:
