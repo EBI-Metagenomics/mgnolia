@@ -15,6 +15,7 @@ from mgnolia.errors import (
     MinMatchError,
 )
 from mgnolia.schema import Dir, File, Node, Schema
+from mgnolia.values import Ref, Value, resolve
 
 
 def test_node_uses_expected_defaults() -> None:
@@ -229,6 +230,15 @@ def test_file_reports_min_match_error_for_missing_glob(tmp_path: Path) -> None:
     assert errors[0].path == tmp_path / "*.txt"
 
 
+def test_file_resolves_min_matches_from_value(tmp_path: Path) -> None:
+    minimum = Value[int]("minimum")
+    minimum.set(2)
+    file_node = File(path="*.txt", min_matches=minimum.ref(), max_matches=None)
+    (tmp_path / "one.txt").touch()
+
+    assert isinstance(file_node.validate_structure(tmp_path)[0], MinMatchError)
+
+
 def test_file_reports_max_match_error(tmp_path: Path) -> None:
     file_node = File(path="*.txt", max_matches=1)
     (tmp_path / "a.txt").write_text("a", encoding="utf-8")
@@ -289,6 +299,38 @@ def test_file_validate_content_calls_rule_for_each_resolved_path(
         (tmp_path / "a.txt").resolve(),
         (tmp_path / "b.txt").resolve(),
     }
+
+
+def test_file_runs_rules_in_order_for_each_resolved_path(tmp_path: Path) -> None:
+    current = Value[str]("current")
+    checked: list[tuple[str, str]] = []
+
+    class Producer(ContentRule):
+        def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
+            current.set(path.stem)
+            return []
+
+    class Consumer(ContentRule):
+        def __init__(self, expected: Ref[str]) -> None:
+            self.expected = expected
+
+        def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
+            checked.append((path.stem, resolve(self.expected)))
+            return []
+
+    file_node = File(
+        path="*.txt",
+        min_matches=2,
+        max_matches=None,
+        content_rules=[Producer(), Consumer(current.ref())],
+    )
+    (tmp_path / "a.txt").touch()
+    (tmp_path / "b.txt").touch()
+
+    file_node.validate_structure(tmp_path)
+    file_node.validate_content()
+
+    assert set(checked) == {("a", "a"), ("b", "b")}
 
 
 def test_file_validate_content_collects_errors_from_rules(tmp_path: Path) -> None:

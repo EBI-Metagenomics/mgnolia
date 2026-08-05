@@ -30,6 +30,7 @@ from mgnolia.errors import (
     StructureValidationError,
     ValidationError,
 )
+from mgnolia.values import Ref, Value, resolve
 
 type PathOrStr = str | PathLike[str] | Path
 
@@ -52,8 +53,9 @@ class NodeBase(BaseModel):
 class Node(NodeBase, abc.ABC):
     """Common configuration for typed public models."""
 
-    min_matches: NonNegativeInt = 1
-    max_matches: Optional[PositiveInt] = 1
+    min_matches: NonNegativeInt | Ref[int] = 1
+    max_matches: PositiveInt | Ref[int] | None = 1
+    output: Value[int] | None = None
 
     @abc.abstractmethod
     def validate_structure(
@@ -70,13 +72,22 @@ class Node(NodeBase, abc.ABC):
         self, parent_path: Path, matches: list[Path]
     ) -> list[StructureValidationError]:
         num_of_matches = len(matches)
+        if self.output is not None:
+            self.output.set(num_of_matches)
+        min_matches = resolve(self.min_matches)
+        max_matches = (
+            resolve(self.max_matches) if self.max_matches is not None else None
+        )
 
-        if num_of_matches < self.min_matches:
+        if max_matches is not None and max_matches < min_matches:
+            raise RuntimeError("resolved max_matches is less than min_matches")
+
+        if num_of_matches < min_matches:
             if self.path_is_glob:
                 return [MinMatchError(self, parent_path / self.path)]
             return [self._missing_error(parent_path / self.path)]
 
-        if self.max_matches is not None and num_of_matches > self.max_matches:
+        if max_matches is not None and num_of_matches > max_matches:
             return [MaxMatchError(self, parent_path / self.path)]
 
         return []
@@ -99,11 +110,16 @@ class Node(NodeBase, abc.ABC):
     @field_validator("max_matches")
     @classmethod
     def validate_max_matches(
-        cls, value: Optional[PositiveInt], info: ValidationInfo
-    ) -> Optional[PositiveInt]:
+        cls, value: PositiveInt | Ref[int] | None, info: ValidationInfo
+    ) -> PositiveInt | Ref[int] | None:
         min_matches = info.data.get("min_matches", 1)
 
-        if value is not None and value < min_matches:
+        if (
+            value is not None
+            and not isinstance(value, Ref)
+            and not isinstance(min_matches, Ref)
+            and value < min_matches
+        ):
             raise ValueError("max_matches must be greater than or equal to min_matches")
 
         return value
@@ -187,7 +203,7 @@ class File(Node):
             )
         errors: list[ContentValidationError] = []
 
-        for rule, path in product(self.content_rules, self._resolved_paths):
+        for path, rule in product(self._resolved_paths, self.content_rules):
             content_errors = rule.validate(self, path)
             errors.extend(content_errors)
 
@@ -211,6 +227,7 @@ class Schema(NodeBase):
     def validate_all(self, root_path: Optional[PathOrStr]) -> bool:
         normalized_root_path = Path(root_path or self.path).resolve()
         self._errors.clear()
+        self._reset_outputs(self.children)
 
         for child in self.children:
             structure_errors = child.validate_structure(normalized_root_path)
@@ -220,3 +237,14 @@ class Schema(NodeBase):
             self._errors.extend(content_errors)
 
         return not self._errors
+
+    @classmethod
+    def _reset_outputs(cls, nodes: list[Dir | File]) -> None:
+        for node in nodes:
+            if node.output is not None:
+                node.output.clear()
+            if isinstance(node, File):
+                for rule in node.content_rules:
+                    rule.reset()
+            else:
+                cls._reset_outputs(node.children)
