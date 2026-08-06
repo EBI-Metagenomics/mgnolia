@@ -17,6 +17,7 @@ For concrete recipes and agent-oriented usage patterns, read [references/usage.m
 - Node paths are relative and reject absolute paths plus `.`/`..` path segments. The root path may be absolute and may contain those segments.
 - Node models use Pydantic with `extra="forbid"`; unknown configuration keys are errors.
 - Public imports are `from mgnolia import Schema, Dir, File`. Content rules are in `mgnolia.content`; error classes are in `mgnolia.errors`.
+- `Value` and `Ref` are also public imports (`from mgnolia import Value, Ref`). `Node.output`, `ContentRule.output`, and `min_matches`/`max_matches` all accept a `Ref` in place of a literal, letting one node/rule's measured result drive another node/rule declared later. See "Inter-node/inter-rule values" below.
 
 Confirm the dependency before making changes in a consuming project:
 
@@ -92,7 +93,29 @@ class MyRule(ContentRule):
         return []
 ```
 
-Return an empty list for success and typed `ContentValidationError` instances for failures. Keep rules side-effect free where possible; `validate()` receives the resolved absolute file path and owning `File` node.
+Return an empty list for success and typed `ContentValidationError` instances for failures. Keep rules side-effect free where possible; `validate()` receives the resolved absolute file path and owning `File` node. Accept an optional `output: Value[T] | None = None` and pass it to `super().__init__(output)` to let the rule publish a value (see below); call `self.output.set(...)` inside `validate()`, ideally before any early return, so the value is published even on failure.
+
+## Inter-node/inter-rule values (`Value`/`Ref`)
+
+- `Value[T]("name")` (from `mgnolia`) is a named slot that a node or content rule populates by passing `output=` at construction time. `.ref()` on a `Value` produces a `Ref[T]`, which can be passed anywhere a later node/rule accepts a literal of that type (`min_matches`, `max_matches`, or a rule constructor argument such as `RowCountRule(max=...)` or `SortedRule(column=...)`).
+- `resolve(x)` (from `mgnolia.values`, used internally) unwraps a `Ref` or passes a literal through unchanged; consuming code usually just calls `ref.resolve()` directly or passes the `Ref` straight into another node/rule parameter.
+- Resolution follows declaration order: the producing node/rule must be declared before the consuming node/rule. Resolving a `Ref` whose `Value` has not been set yet raises `RuntimeError`.
+- Built-in producers (all support `output=`): `File`/`Dir` publish their match count; `FileNotEmptyRule` publishes file size in bytes; `CSVSchemaRule`/`ParquetSchemaRule` publish the actual Polars schema; `RowCountRule` publishes the actual row count; `SortedRule` publishes the column's `(min, max)`. Values are set even when the corresponding check fails, so error reporting stays complete.
+- `schema.validate_all()` clears every `Value` at the start of the run (via `Schema._reset_outputs`), so a reused `Schema` instance never reads a stale value from a prior run.
+
+```python
+from mgnolia import File, Schema, Value
+from mgnolia.content import RowCountRule
+
+user_count = Value[int]("users.row_count")
+
+schema = Schema(children=[
+    File(path="users.parquet", content_rules=[
+        RowCountRule(min=1, max=10_000, output=user_count),
+    ]),
+    File(path="user_avatars/*.png", min_matches=0, max_matches=user_count.ref()),
+])
+```
 
 ## Error map
 

@@ -13,6 +13,7 @@ Use this document for mgnolia's mechanics, then inspect that project's configura
 - [Per-directory repeated structures](#per-directory-repeated-structures)
 - [Content validation](#content-validation)
 - [Custom content rules](#custom-content-rules)
+- [Publishing and consuming values](#publishing-and-consuming-values)
 - [Validation lifecycle](#validation-lifecycle)
 - [Diagnose failures](#diagnose-failures)
 - [Agent workflow](#agent-workflow)
@@ -274,6 +275,111 @@ class HeaderRule(ContentRule):
 
 Rules receive the owning `File` node and a resolved file path. They run once per matched file. Prefer deterministic, side-effect-free checks and return typed subclasses with useful fields/messages when the consuming project needs actionable diagnostics.
 
+## Publishing and consuming values
+
+A node or content rule can publish a measured value for a *later* node or rule to consume, using `Value` and `Ref` (both importable from top-level `mgnolia`):
+
+```python
+from mgnolia import File, Schema, Value
+from mgnolia.content import RowCountRule
+```
+
+`Value[T]("name")` is a named slot. Pass it as `output=` to a `File`, `Dir`, or content rule constructor to have that node/rule populate it. Call `.ref()` on the `Value` to get a `Ref[T]`, which can be passed anywhere a later node/rule accepts a literal of matching type — `min_matches`, `max_matches`, or a rule constructor argument.
+
+```python
+user_count = Value[int]("users.row_count")
+avatar_count = Value[int]("avatars.match_count")
+
+schema = Schema(
+    children=[
+        # Producers must appear before consumers.
+        File(
+            path="users.parquet",
+            content_rules=[
+                RowCountRule(min=1, max=10_000, output=user_count),
+            ],
+        ),
+        File(
+            path="user_avatars/*.png",
+            min_matches=0,
+            max_matches=user_count.ref(),
+            output=avatar_count,
+        ),
+    ]
+)
+```
+
+Values can also flow between rules on the *same* `File`, since content rules run in list order for each matched file:
+
+```python
+import re
+from pathlib import Path
+
+from mgnolia import Dir, File, Ref, Schema, Value
+from mgnolia.content import ContentRule
+from mgnolia.errors import ContentValidationError
+from mgnolia.schema import Node
+
+
+class FilenameRule(ContentRule):
+    def __init__(self, output: Value[str]) -> None:
+        super().__init__(output)
+        self.accession = output
+
+    def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
+        self.accession.set(path.stem)
+        if re.fullmatch(r"ERR\d{6}\.tsv", path.name):
+            return []
+        return [ContentValidationError(node, path)]
+
+
+class ContainsTextRule(ContentRule):
+    def __init__(self, expected: Ref[str]) -> None:
+        super().__init__()
+        self.expected = expected
+
+    def validate(self, node: Node, path: Path) -> list[ContentValidationError]:
+        expected = self.expected.resolve()
+        if expected in path.read_text(encoding="utf-8"):
+            return []
+        return [ContentValidationError(node, path)]
+
+
+accession = Value[str]("current_accession")
+
+schema = Schema(
+    children=[
+        Dir(
+            path="runs",
+            children=[
+                File(
+                    path="*.tsv",
+                    max_matches=None,
+                    content_rules=[
+                        FilenameRule(output=accession),
+                        ContainsTextRule(accession.ref()),
+                    ],
+                ),
+            ],
+        ),
+    ]
+)
+```
+
+For `ERR123456.tsv`, `FilenameRule` publishes `ERR123456` and `ContainsTextRule` consumes it while validating that same file. A custom rule that wants to publish a value should accept `output: Value[T] | None = None`, pass it to `super().__init__(output)`, and call `self.output.set(...)` inside `validate()` (ideally before any early return, so the value is set even on failure).
+
+References resolve in declaration order: the top-level subtree that produces a value must be declared before the subtree that consumes it. Calling `.resolve()` on a `Ref` whose `Value` has not been published yet raises `RuntimeError`.
+
+The following built-ins support `output=` and publish their measured result even when the check fails:
+
+- `File` and `Dir` publish their actual number of matches.
+- `FileNotEmptyRule` publishes the file size in bytes.
+- `CSVSchemaRule` and `ParquetSchemaRule` publish the actual Polars schema.
+- `RowCountRule` publishes the actual row count.
+- `SortedRule` publishes the column's `(min, max)` values.
+
+A `Ref` can be used for `min_matches`, `max_matches`, or any compatible parameter of the built-in content rules. `schema.validate_all()` clears every `Value` at the start of each run, so a reused `Schema` never reads a stale value from a previous run.
+
 ## Validation lifecycle
 
 The normal lifecycle is always:
@@ -340,3 +446,5 @@ Keep domain policy in the consuming project. mgnolia should express the contract
 - Treating `validate_all()` as exception-based; ordinary failures are returned as `False` and stored in `schema.errors`.
 - Using `CSVSchemaRule` for Parquet or `ParquetSchemaRule` for CSV.
 - Assuming `File` and `Dir` enforce filesystem object type; current matching is based on paths returned by `Path.glob`, so verify this behavior before relying on it.
+- Referencing a `Value` via `Ref.resolve()` before its producing node/rule is declared; resolution follows declaration order and an unset `Value` raises `RuntimeError`.
+- Forgetting `output=` on the producing node/rule, so the `Value` is never populated for a later `Ref` to consume.
