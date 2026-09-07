@@ -7,7 +7,7 @@ license = { file = "LICENSE" }
 authors = [
     { name = "Aleksandar", email = "arjkvc@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "pandera[polars]>=0.31.1,<1.0",
     "pydantic>=2.13.4,<3.0",
@@ -28,4 +28,4 @@ dev = [
 [tool.pyright]
 include = ["src/mgnolia"]
 typeCheckingMode = "standard"
-pythonVersion = "3.13"
+pythonVersion = "3.12"
