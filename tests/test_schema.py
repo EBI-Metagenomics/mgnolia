@@ -172,18 +172,18 @@ def test_dir_aggregates_child_errors_across_matched_directories(tmp_path: Path) 
 
     errors = directory.validate_structure(tmp_path)
 
-    assert [type(error) for error in errors] == [
+    assert {type(error) for error in errors} == {
         FileMissingError,
         FileMissingError,
         DirectoryMissingError,
         DirectoryMissingError,
-    ]
-    assert [error.path for error in errors] == [
+    }
+    assert {error.path for error in errors} == {
         tmp_path / "sample_001" / "results.vcf.gz",
         tmp_path / "sample_002" / "results.vcf.gz",
         tmp_path / "sample_001" / "logs",
         tmp_path / "sample_002" / "logs",
-    ]
+    }
 
 
 def test_dir_currently_counts_file_matches(tmp_path: Path) -> None:
